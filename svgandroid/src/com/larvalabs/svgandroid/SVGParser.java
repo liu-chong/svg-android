@@ -3,24 +3,37 @@ package com.larvalabs.svgandroid;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.graphics.*;
-import android.graphics.drawable.PictureDrawable;
 import android.util.Log;
 import android.util.SparseIntArray;
 
+import org.w3c.dom.Attr;
+import org.w3c.dom.Document;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
+import org.xml.sax.helpers.AttributesImpl;
 import org.xml.sax.helpers.DefaultHandler;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserFactory;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
+
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Map;
 
 /*
 
@@ -219,15 +232,51 @@ public class SVGParser {
 		// Util.debug("Parsing SVG...");
 		try {
 			long start = System.currentTimeMillis();
-			SAXParserFactory spf = SAXParserFactory.newInstance();
-			SAXParser sp = spf.newSAXParser();
-			XMLReader xr = sp.getXMLReader();
+			DocumentBuilderFactory factory = DocumentBuilderFactory
+					.newInstance();
+
+			factory.setNamespaceAware(false);
+			factory.setValidating(false);
+			factory.setIgnoringComments(true);
+			try {
+				factory.setFeature("http://xml.org/sax/features/namespaces",
+						false);
+				factory.setFeature("http://xml.org/sax/features/validation",
+						false);
+			} catch (ParserConfigurationException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
+
+			DocumentBuilder db = factory.newDocumentBuilder();
+			
+			BufferedReader reader = new BufferedReader(
+					new InputStreamReader(in), 8192);
+
+			StringBuilder sBuilder = new StringBuilder();
+
+			String line;
+			while ((line = reader.readLine()) != null) {
+				sBuilder.append(line);
+			}
+
+			String svgString = sBuilder.toString();
+
+			Document doc = db
+					.parse(new InputSource(new StringReader(svgString)));
+
+			long parseTime = System.currentTimeMillis() - start;
+
+			System.out.println("Time to setup builder and parse to DOM: "
+					+ parseTime);
+
 			final Picture picture = new Picture();
 			SVGHandler handler = new SVGHandler(picture);
 			handler.setColorSwapData(colorSwapData);
 			handler.setWhiteMode(whiteMode);
-			xr.setContentHandler(handler);
-			xr.parse(new InputSource(in));
+
+			handler.setDocument(doc);
+			handler.parse();
 			// Util.debug("Parsing complete in " + (System.currentTimeMillis() -
 			// start) + " millis.");
 			SVG result = new SVG(picture, handler.bounds);
@@ -235,6 +284,9 @@ public class SVGParser {
 			if (!Float.isInfinite(handler.limits.top)) {
 				result.setLimits(handler.limits);
 			}
+
+			System.out.println("Time to parse to SVG: "
+					+ (System.currentTimeMillis() - start - parseTime));
 			return result;
 		} catch (Exception e) {
 			throw new SVGParseException(e);
@@ -808,6 +860,8 @@ public class SVGParser {
 
 	private static class SVGHandler extends DefaultHandler {
 
+		Document document;
+
 		Picture picture;
 		Canvas canvas;
 		Paint paint;
@@ -832,6 +886,10 @@ public class SVGParser {
 			this.picture = picture;
 			paint = new Paint();
 			paint.setAntiAlias(true);
+		}
+
+		public void setDocument(Document doc) {
+			this.document = doc;
 		}
 
 		public void setColorSwapData(SparseIntArray colorSwapData) {
@@ -1031,6 +1089,48 @@ public class SVGParser {
 			}
 		}
 
+		public void parse() throws SAXException {
+			parse(document.getElementsByTagName("svg").item(0));
+		}
+
+		private void parse(Node node) throws SAXException {
+			if (node.getNodeName() != null) {
+				startElement(node.getNamespaceURI(), node.getNodeName(), "",
+						getAttributes(node.getAttributes()));
+			}
+
+			NodeList nodeList = node.getChildNodes();
+
+			for (int i = 0; i < nodeList.getLength(); i++) {
+				parse(nodeList.item(i));
+			}
+
+			if (node.getNodeName() != null) {
+				endElement(node.getNamespaceURI(), node.getNodeName(), "");
+			}
+		}
+
+		private Attributes getAttributes(NamedNodeMap mapAttr) {
+			if (mapAttr != null) {
+				AttributesImpl attributesimpl = new AttributesImpl();
+				int i = mapAttr.getLength();
+				for (int j = 0; j < i; j++) {
+					Attr attr = (Attr) mapAttr.item(j);
+					String s3 = attr.getNamespaceURI();
+					if (s3 == null)
+						s3 = "";
+					String s4 = attr.getNodeName();
+					String s5 = attr.getName();
+					String s6 = attr.getValue();
+
+					attributesimpl.addAttribute(s3, s4, s5, "", s6);
+				}
+				return attributesimpl;
+			}
+
+			return null;
+		}
+
 		@Override
 		public void startElement(String namespaceURI, String localName,
 				String qName, Attributes atts) throws SAXException {
@@ -1220,8 +1320,6 @@ public class SVGParser {
 					canvas.drawPath(p, paint);
 				}
 				popTransform();
-			} else if (!hidden) {
-				Log.d(TAG, "UNRECOGNIZED SVG COMMAND: " + localName);
 			}
 		}
 
