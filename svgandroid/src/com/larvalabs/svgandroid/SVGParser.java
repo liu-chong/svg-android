@@ -67,6 +67,7 @@ import java.util.HashMap;
  * @see #getSVGFromInputStream(java.io.InputStream)
  * @see #parsePath(String)
  */
+@SuppressWarnings("unused")
 public class SVGParser {
 
 	static final String TAG = "SVGAndroid";
@@ -1154,8 +1155,14 @@ public class SVGParser {
 				return;
 			}
 			if (localName.equals("svg")) {
-				int width = (int) Math.ceil(getFloatAttr("width", atts));
-				int height = (int) Math.ceil(getFloatAttr("height", atts));
+			    String wAttr = getStringAttr("width", atts);
+			    if (wAttr.endsWith("pt"))
+			        wAttr = wAttr.substring(0, wAttr.length() - 2);
+			    String hAttr = getStringAttr("height", atts);
+			    if (hAttr.endsWith("pt"))
+			        hAttr = hAttr.substring(0, hAttr.length() - 2);
+				int width = (int) Math.ceil(Double.valueOf(wAttr));
+				int height = (int) Math.ceil(Double.valueOf(hAttr));
 				canvas = picture.beginRecording(width, height);
 			} else if (localName.equals("defs")) {
 				// Ignore
